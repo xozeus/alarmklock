@@ -12,37 +12,30 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Locate project and list files
+      - name: Show repo root and KraigsAndroid folder
         run: |
-          echo "Repo root listing:"
+          echo "Root listing:"
           ls -la
-          echo "app folder listing:"
-          ls -la app || true
+          echo "KraigsAndroid listing:"
+          ls -la KraigsAndroid || true
 
-      - name: Install Java (Temurin 17)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Gradle (if no wrapper)
+      - name: Install Gradle (for projects without wrapper)
         uses: gradle/gradle-build-action@v2
 
-      - name: Build debug APK (use wrapper if present, else gradle)
+      - name: Build debug APK
         run: |
+          cd KraigsAndroid
+          # prefer wrapper if present
           if [ -x ./gradlew ]; then
-            echo "Using project gradlew at repo root"
             chmod +x ./gradlew
-            cd app || exit 1
-            ../gradlew :app:assembleDebug --no-daemon
-          elif [ -f app/gradlew ]; then
-            echo "Using gradlew inside app/"
-            chmod +x app/gradlew
-            cd app
             ./gradlew :app:assembleDebug --no-daemon
           else
-            echo "No gradlew found — using installed gradle"
-            cd app
             gradle :app:assembleDebug --no-daemon
           fi
 
@@ -50,4 +43,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kraigsandroid-app-debug-apk
-          path: app/app/build/outputs/apk/debug/*.apk
+          path: KraigsAndroid/app/build/outputs/apk/debug/*.apk
