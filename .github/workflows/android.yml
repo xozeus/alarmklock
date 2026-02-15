@@ -1,4 +1,4 @@
-name: Android CI - build debug APK
+name: Android CI - build debug APK (auto-detect)
 
 on:
   workflow_dispatch:
@@ -12,12 +12,26 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Show repo root and KraigsAndroid folder
+      - name: Show repo root
         run: |
           echo "Root listing:"
           ls -la
-          echo "KraigsAndroid listing:"
-          ls -la KraigsAndroid || true
+
+      - name: Find Android project folder (contains build.gradle or settings.gradle)
+        id: findproj
+        run: |
+          # search for a folder containing build.gradle(.kts) or settings.gradle(.kts)
+          proj=$(find . -maxdepth 3 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | sort -u | head -n 1)
+          if [ -z "$proj" ]; then
+            echo "no_project=true" >> $GITHUB_OUTPUT
+            echo "No Android Gradle project found within depth 3."
+            exit 1
+          fi
+          # normalize path (remove leading ./)
+          proj=${proj#./}
+          echo "project_dir=$proj" >> $GITHUB_OUTPUT
+          echo "Found project dir: $proj"
+          ls -la "$proj" || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -25,16 +39,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Gradle (for projects without wrapper)
+      - name: Install Gradle (if wrapper missing)
         uses: gradle/gradle-build-action@v2
 
-      - name: Build debug APK
+      - name: Build debug APK (use wrapper if present)
         run: |
-          cd KraigsAndroid
-          # prefer wrapper if present
+          PROJ_DIR="${{ steps.findproj.outputs.project_dir }}"
+          echo "Building in: $PROJ_DIR"
+          cd "$PROJ_DIR"
+          # if gradlew exists in project dir use it; else try parent wrapper; else use installed gradle
           if [ -x ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew :app:assembleDebug --no-daemon
+          elif [ -x ../gradlew ]; then
+            chmod +x ../gradlew
+            ../gradlew :app:assembleDebug --no-daemon
           else
             gradle :app:assembleDebug --no-daemon
           fi
@@ -43,4 +62,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kraigsandroid-app-debug-apk
-          path: KraigsAndroid/app/build/outputs/apk/debug/*.apk
+          path: ${{ steps.findproj.outputs.project_dir }}/app/build/outputs/apk/debug/*.apk
