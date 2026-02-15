@@ -17,21 +17,19 @@ jobs:
           echo "Root listing:"
           ls -la
 
-      - name: Find Android project folder (contains build.gradle or settings.gradle)
-        id: findproj
+      - name: Find Gradle root (settings.gradle or settings.gradle.kts)
+        id: find_root
         run: |
-          # search for a folder containing build.gradle(.kts) or settings.gradle(.kts)
-          proj=$(find . -maxdepth 3 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | sort -u | head -n 1)
-          if [ -z "$proj" ]; then
-            echo "no_project=true" >> $GITHUB_OUTPUT
-            echo "No Android Gradle project found within depth 3."
+          root=$(find . -maxdepth 4 -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | sort -u | head -n 1)
+          if [ -z "$root" ]; then
+            echo "no_root=true" >> $GITHUB_OUTPUT
+            echo "No Gradle settings file found within depth 4."
             exit 1
           fi
-          # normalize path (remove leading ./)
-          proj=${proj#./}
-          echo "project_dir=$proj" >> $GITHUB_OUTPUT
-          echo "Found project dir: $proj"
-          ls -la "$proj" || true
+          root=${root#./}
+          echo "gradle_root=$root" >> $GITHUB_OUTPUT
+          echo "Found Gradle root: $root"
+          ls -la "$root" || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -39,27 +37,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Gradle (if wrapper missing)
+      - name: Install Gradle (for projects without wrapper)
         uses: gradle/gradle-build-action@v2
 
       - name: Build debug APK (use wrapper if present)
         run: |
-          PROJ_DIR="${{ steps.findproj.outputs.project_dir }}"
-          echo "Building in: $PROJ_DIR"
-          cd "$PROJ_DIR"
-          # if gradlew exists in project dir use it; else try parent wrapper; else use installed gradle
+          ROOT="${{ steps.find_root.outputs.gradle_root }}"
+          echo "Using Gradle root: $ROOT"
+          cd "$ROOT"
+          # prefer wrapper in this root
           if [ -x ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew :app:assembleDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon
           elif [ -x ../gradlew ]; then
             chmod +x ../gradlew
-            ../gradlew :app:assembleDebug --no-daemon
+            ../gradlew assembleDebug --no-daemon
           else
-            gradle :app:assembleDebug --no-daemon
+            gradle assembleDebug --no-daemon
           fi
 
-      - name: Upload debug APK artifact
+      - name: Upload debug APK artifact (search all)
         uses: actions/upload-artifact@v4
         with:
-          name: kraigsandroid-app-debug-apk
-          path: ${{ steps.findproj.outputs.project_dir }}/app/build/outputs/apk/debug/*.apk
+          name: kraigsandroid-debug-apks
+          path: '**/build/outputs/apk/debug/*.apk'
